@@ -382,7 +382,7 @@ class BufferObj:
       lock_buffers.release()
 
 
-class DaemonMobWrite(SocketServer.StreamRequestHandler, mobwrite_core.MobWrite):
+class DaemonMobWrite(mobwrite_core.MobWrite):
 
   def feedBuffer(self, name, size, index, datum):
     """Add one block of text to the buffer and return the whole text if the
@@ -432,34 +432,6 @@ class DaemonMobWrite(SocketServer.StreamRequestHandler, mobwrite_core.MobWrite):
       if text is None:
         text = ""
     return urllib.unquote(text)
-
-
-  def handle(self):
-    timeout_telnet = float(mobwrite_core.CFG.get("TIMEOUT_TELNET", 2.0))
-    self.connection.settimeout(timeout_telnet)
-    connection_origin = mobwrite_core.CFG.get("CONNECTION_ORIGIN", "")
-    if connection_origin and self.client_address[0] != connection_origin:
-      raise("Connection refused from %s (only %s allowed)." %
-          (self.client_address[0], connection_origin))
-    mobwrite_core.LOG.info("Connection accepted from " + self.client_address[0])
-
-    data = []
-    # Read in all the lines.
-    while 1:
-      try:
-        line = self.rfile.readline()
-      except:
-        # Timeout.
-        mobwrite_core.LOG.warning("Timeout on connection")
-        break
-      data.append(line)
-      if not line.rstrip("\r\n"):
-        # Terminate and execute on blank line.
-        self.wfile.write(self.handleRequest("".join(data)))
-        break
-
-    # Goodbye
-    mobwrite_core.LOG.debug("Disconnecting.")
 
 
   def handleRequest(self, text):
@@ -659,44 +631,77 @@ class DaemonMobWrite(SocketServer.StreamRequestHandler, mobwrite_core.MobWrite):
 
     return "".join(output)
 
+
+class StreamMobWrite(SocketServer.StreamRequestHandler, DaemonMobWrite):
+  def handle(self):
+    timeout_telnet = float(mobwrite_core.CFG.get("TIMEOUT_TELNET", 2.0))
+    self.connection.settimeout(timeout_telnet)
+    connection_origin = mobwrite_core.CFG.get("CONNECTION_ORIGIN", "")
+    if connection_origin and self.client_address[0] != connection_origin:
+      raise("Connection refused from %s (only %s allowed)." %
+          (self.client_address[0], connection_origin))
+    mobwrite_core.LOG.info("Connection accepted from " + self.client_address[0])
+
+    data = []
+    # Read in all the lines.
+    while 1:
+      try:
+        line = self.rfile.readline()
+      except:
+        # Timeout.
+        mobwrite_core.LOG.warning("Timeout on connection")
+        break
+      data.append(line)
+      if not line.rstrip("\r\n"):
+        # Terminate and execute on blank line.
+        self.wfile.write(self.handleRequest("".join(data)))
+        break
+
+    # Goodbye
+    mobwrite_core.LOG.debug("Disconnecting.")
+
+
 def cleanup_thread():
   # Every minute cleanup
   if STORAGE_MODE == BDB:
     import bsddb
 
   while True:
-    mobwrite_core.LOG.info("Running cleanup task.")
-    for v in views.values():
-      v.cleanup()
-    for v in texts.values():
-      v.cleanup()
-    for v in buffers.values():
-      v.cleanup()
-
-    timeout = datetime.datetime.now() - mobwrite_core.TIMEOUT_TEXT
-    if STORAGE_MODE == FILE:
-      # Delete old files.
-      files = glob.glob("%s/*.txt" % DATA_DIR)
-      for filename in files:
-        if datetime.datetime.fromtimestamp(os.path.getmtime(filename)) < timeout:
-          os.unlink(filename)
-          mobwrite_core.LOG.info("Deleted file: '%s'" % filename)
-
-    if STORAGE_MODE == BDB:
-      # Delete old DB records.
-      # Can't delete an entry in a hash while iterating or else order is lost.
-      expired = []
-      for k, v in lasttime_db.iteritems():
-        if datetime.datetime.fromtimestamp(int(v)) < timeout:
-          expired.append(k)
-      for k in expired:
-        if texts_db.has_key(k):
-          del texts_db[k]
-        if lasttime_db.has_key(k):
-          del lasttime_db[k]
-        mobwrite_core.LOG.info("Deleted from DB: '%s'" % k)
-
+    do_cleanup()
     time.sleep(60)
+
+
+def do_cleanup():
+  mobwrite_core.LOG.info("Running cleanup task.")
+  for v in views.values():
+    v.cleanup()
+  for v in texts.values():
+    v.cleanup()
+  for v in buffers.values():
+    v.cleanup()
+
+  timeout = datetime.datetime.now() - mobwrite_core.TIMEOUT_TEXT
+  if STORAGE_MODE == FILE:
+    # Delete old files.
+    files = glob.glob("%s/*.txt" % DATA_DIR)
+    for filename in files:
+      if datetime.datetime.fromtimestamp(os.path.getmtime(filename)) < timeout:
+        os.unlink(filename)
+        mobwrite_core.LOG.info("Deleted file: '%s'" % filename)
+  
+  if STORAGE_MODE == BDB:
+    # Delete old DB records.
+    # Can't delete an entry in a hash while iterating or else order is lost.
+    expired = []
+    for k, v in lasttime_db.iteritems():
+      if datetime.datetime.fromtimestamp(int(v)) < timeout:
+        expired.append(k)
+    for k in expired:
+      if texts_db.has_key(k):
+        del texts_db[k]
+      if lasttime_db.has_key(k):
+        del lasttime_db[k]
+      mobwrite_core.LOG.info("Deleted from DB: '%s'" % k)
 
 
 def main():
@@ -712,7 +717,7 @@ def main():
 
   port = int(mobwrite_core.CFG.get("LOCAL_PORT", 3017))
   mobwrite_core.LOG.info("Listening on port %d..." % port)
-  s = SocketServer.ThreadingTCPServer(("", port), DaemonMobWrite)
+  s = SocketServer.ThreadingTCPServer(("", port), StreamMobWrite)
   try:
     s.serve_forever()
   except KeyboardInterrupt:
