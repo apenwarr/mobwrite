@@ -39,10 +39,10 @@ import urllib
 try:
   # Used by non-Google applications.
   # mobwrite_core.py is in the lib directory.
-  sys.path.insert(0, "lib")
+  ROOT_DIR = os.path.dirname(__file__)
+  sys.path.insert(0, os.path.join(ROOT_DIR, "lib"))
   import mobwrite_core
   del sys.path[0]
-  ROOT_DIR = "./"
 except ImportError:
   # Google has a custom build system which requires absolute referencing.
   from google3.third_party.mobwrite.daemon.lib import mobwrite_core
