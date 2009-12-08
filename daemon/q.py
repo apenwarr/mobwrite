@@ -27,7 +27,7 @@ either side.  Works either as a CGI script or as a mod_python script.
 __author__ = "fraser@google.com (Neil Fraser)"
 
 import socket
-import os
+import os, sys
 
 PORT = 3017
 DEFAULT_EDITOR = "/home/mobwrite/default_editor.html"
@@ -35,7 +35,7 @@ DEFAULT_EDITOR = "/home/mobwrite/default_editor.html"
 def handler(req):
   if req == None:
     # CGI call
-    if os.environ["QUERY_STRING"]:
+    if not os.environ.get("QUERY_STRING"):
       print "Content-Type: text/html"
       print ""
       printEditor()
