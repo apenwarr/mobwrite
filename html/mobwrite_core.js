@@ -869,7 +869,7 @@ mobwrite.syncCheckAjax_ = function() {
     if (mobwrite.syncAjaxObj_.status == 200) {
       var text = mobwrite.syncAjaxObj_.responseText;
       mobwrite.syncAjaxObj_ = null;
-      mobwrite.syncRun2_(text);
+      mobwrite.syncRun2_(text + '\n');
     } else {
       if (mobwrite.debug) {
         window.console.warn('Connection error code: ' + mobwrite.syncAjaxObj_.status);
